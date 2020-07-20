@@ -73,40 +73,27 @@ int main() {
     std::cout << meta.R1 << " " << meta.R2 << " " << meta.B << " " << meta.F << " " << meta.O << std::endl;
 
     // Extract the binary data
-    int ret = etPtr->ExtractInfo(outFilename.c_str(), "-b\n-RawThermalImage");
-
-//    std::string commandStr = outFilename + " -b -RawThermalImage";
-//    std::cout << commandStr << std::endl;
-//    int ret = etPtr->Command(commandStr.c_str());
-    if (ret <= 0) {
-        std::cout << "Unable to perform command" << std::endl;
+//    int cmdNum = etPtr->ExtractInfo(outFilename.c_str(), "-b\n-RawThermalImage");
+    int cmdNum = etPtr->ExtractInfo(outFilename.c_str(), "-b\n-RawThermalImage");
+    if (cmdNum < 0) {
+        std::cout << "There was an error issuing the command" << std::endl;
         return -1;
     }
 
-    TagInfo *myinfo = etPtr->GetInfo(ret, 1);
-    for (TagInfo *i=myinfo; i; i=i->next) {
-        std::cout << "Tag:" << std::endl;
-       std::cout << i->name << std::endl;
-       std::cout << i->valueLen << std::endl;
+    // Wait up to 1 seconds
+    TagInfo *myinfo = etPtr->GetInfo(cmdNum, 1);
+    if (info) {
+        for (TagInfo *i = myinfo; i; i = i->next) {
+            std::cout << "Tag:" << std::endl;
+            std::cout << i->name << std::endl;
+            std::cout << i->valueLen << std::endl;
+        }
+        // we are responsible for deleting the information when done
+        delete myinfo;
+    } else {
+        std::cout << etPtr->GetError() << std::endl;
+        cerr << "Error executing exiftool!" << endl;
     }
-
-    // we are responsible for deleting the information when done
-    delete myinfo;
-
-
-    // Wait max of 1 seconds
-//    int cmdNum = etPtr->Complete(1);
-//    if (cmdNum <= 0) {
-//        std::cout << "Unable to communicate with exiftool process" << std::endl;
-//        return -1;
-//    }
-//    std::cout << cmdNum << std::endl;
-
-    std::cout << etPtr->GetError() << std::endl;
-
-//    auto outputLen = etPtr->GetOutputLen();
-//    std::cout << outputLen << std::endl;
-
 
     auto finish = std::chrono::high_resolution_clock::now();
     std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(finish-start).count() << " ms" << std::endl;
