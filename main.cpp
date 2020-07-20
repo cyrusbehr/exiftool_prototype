@@ -40,7 +40,7 @@ int main() {
 
     auto start = std::chrono::high_resolution_clock::now();
 
-    // Write the buffer to a temporary file.
+    // Write the buffer to a temporary file to simulate scenario where we get buffer from http request.
     // Get temp filename
     std::string outFilename = std::tmpnam(nullptr);
     std::ofstream outfile (outFilename,std::ofstream::binary);
@@ -54,8 +54,6 @@ int main() {
     if (info) {
         // print returned information
         for (TagInfo *i=info; i; i=i->next) {
-            std::cout << i->name << " " << i->value << std::endl;
-
             if (std::string(i->name) == "PlanckR1") {
                 meta.R1 = std::stof(i->value);
             } else if (std::string(i->name) == "PlanckR2") {
@@ -115,9 +113,6 @@ int main() {
     }
 
     cv::Mat thermalImg = cv::imread(tiffFilename, cv::IMREAD_UNCHANGED);
-    if (thermalImg.depth() == CV_16U) {
-        std::cout << "cv_16u" << std::endl;
-    }
 
     thermalImg.convertTo(thermalImg, CV_32FC1);
 
@@ -125,7 +120,9 @@ int main() {
     cv::log( meta.R1 / (meta.R2 * (thermalImg + meta.O)) + meta.F, loggedMat);
     cv::Mat kelvinMat = meta.B / loggedMat;
 
-    std::cout << kelvinMat.at<float>(0,0) - 273.15 << std::endl;
+    // Can go up to 479, 639
+//    std::cout << kelvinMat.at<float>(479, 639) - 273.15 << std::endl;
+    std::cout << kelvinMat.at<float>(0, 0) - 273.15 << std::endl;
 
     auto finish = std::chrono::high_resolution_clock::now();
     std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(finish-start).count() << " ms" << std::endl;
