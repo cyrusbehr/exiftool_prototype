@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cstdio>
 #include <stdio.h>
+#include <cstring>
+#include <opencv2/opencv.hpp>
 
 using namespace std::chrono;
 using namespace std;
@@ -43,6 +45,7 @@ int main() {
     std::string outFilename = std::tmpnam(nullptr);
     std::ofstream outfile (outFilename,std::ofstream::binary);
     outfile.write (buffer.data() ,size);
+    outfile.close();
 
     TagInfo* info = etPtr->ImageInfo(outFilename.c_str());
 
@@ -51,6 +54,8 @@ int main() {
     if (info) {
         // print returned information
         for (TagInfo *i=info; i; i=i->next) {
+            std::cout << i->name << " " << i->value << std::endl;
+
             if (std::string(i->name) == "PlanckR1") {
                 meta.R1 = std::stof(i->value);
             } else if (std::string(i->name) == "PlanckR2") {
@@ -73,20 +78,29 @@ int main() {
     std::cout << meta.R1 << " " << meta.R2 << " " << meta.B << " " << meta.F << " " << meta.O << std::endl;
 
     // Extract the binary data
-//    int cmdNum = etPtr->ExtractInfo(outFilename.c_str(), "-b\n-RawThermalImage");
     int cmdNum = etPtr->ExtractInfo(outFilename.c_str(), "-b\n-RawThermalImage");
     if (cmdNum < 0) {
         std::cout << "There was an error issuing the command" << std::endl;
         return -1;
     }
 
+    bool foundTag = false;
+    std::string tiffFilename;
+
     // Wait up to 1 seconds
     TagInfo *myinfo = etPtr->GetInfo(cmdNum, 1);
     if (info) {
         for (TagInfo *i = myinfo; i; i = i->next) {
-            std::cout << "Tag:" << std::endl;
-            std::cout << i->name << std::endl;
-            std::cout << i->valueLen << std::endl;
+            if (std::string(i->name) == "RawThermalImage") {
+                foundTag = true;
+                std::cout << i->name << " valueLen: " << i->valueLen << " numLen: " << i->numLen << std::endl;
+                tiffFilename = cv::tempfile(".tiff");
+                std::cout << tiffFilename << std::endl;
+                std::ofstream tiffFile;
+                tiffFile.open(tiffFilename, std::ios::out | std::ios::binary);
+                tiffFile.write(i->value, i->valueLen);
+                tiffFile.close();
+            }
         }
         // we are responsible for deleting the information when done
         delete myinfo;
@@ -95,12 +109,28 @@ int main() {
         cerr << "Error executing exiftool!" << endl;
     }
 
+    if (!foundTag) {
+        std::cout << "Unable to find tag" << std::endl;
+        return -1;
+    }
+
+    cv::Mat thermalImg = cv::imread(tiffFilename, cv::IMREAD_UNCHANGED);
+    if (thermalImg.depth() == CV_16U) {
+        std::cout << "cv_16u" << std::endl;
+    }
+
+    thermalImg.convertTo(thermalImg, CV_32FC1);
+
+    cv::Mat loggedMat;
+    cv::log( meta.R1 / (meta.R2 * (thermalImg + meta.O)) + meta.F, loggedMat);
+    cv::Mat kelvinMat = meta.B / loggedMat;
+
+    std::cout << kelvinMat.at<float>(0,0) - 273.15 << std::endl;
+
     auto finish = std::chrono::high_resolution_clock::now();
     std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(finish-start).count() << " ms" << std::endl;
 
-    // Cleanup and remove the temp file
-    // TODO
-//    remove(outFilename.c_str());
+    remove(outFilename.c_str());
 
     return 0;
 }
