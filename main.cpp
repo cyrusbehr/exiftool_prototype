@@ -23,7 +23,7 @@ struct Metadata {
 };
 
 int main() {
-    const std::string filepath = "/home/cyrus/work/IRYX/prototype/exiftool/img.txt";
+    const std::string filepath = "/home/cyrus/work/IRYX/prototype/exiftool/thermal.txt";
 
     // Read it into a buffer
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
@@ -118,11 +118,23 @@ int main() {
 
     cv::Mat loggedMat;
     cv::log( meta.R1 / (meta.R2 * (thermalImg + meta.O)) + meta.F, loggedMat);
-    cv::Mat kelvinMat = meta.B / loggedMat;
+    cv::Mat celciusMat = meta.B / loggedMat - 273.15;
 
     // Can go up to 479, 639
 //    std::cout << kelvinMat.at<float>(479, 639) - 273.15 << std::endl;
-    std::cout << kelvinMat.at<float>(0, 0) - 273.15 << std::endl;
+//    std::cout << kelvinMat.at<float>(0, 0) - 273.15 << std::endl;
+
+    // Find the max temp in the frame
+    float maxTemp = 0;
+    for (int row = 0; row < celciusMat.rows; ++row) {
+        for (int col = 0; col < celciusMat.cols; ++col) {
+            if (celciusMat.at<float>(row, col) > maxTemp) {
+                maxTemp = celciusMat.at<float>(row, col);
+            }
+        }
+    }
+
+    std::cout << "The max temp is: " << maxTemp << std::endl;
 
     auto finish = std::chrono::high_resolution_clock::now();
     std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(finish-start).count() << " ms" << std::endl;
