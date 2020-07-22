@@ -85,7 +85,7 @@ int main() {
 
             // Wait up to 1 seconds
             TagInfo *myinfo = etPtr->GetInfo(cmdNum, 1);
-            if (info) {
+            if (myinfo) {
                 for (TagInfo *i = myinfo; i; i = i->next) {
                     if (std::string(i->name) == "RawThermalImage") {
                         foundTag = true;
