@@ -10,9 +10,84 @@
 #include "curlpp/Options.hpp"
 #include <cstring>
 #include <opencv2/opencv.hpp>
+#include "tf_sdk.h"
 
 using namespace std::chrono;
 using namespace std;
+
+struct ROI {
+    ROI() = default;
+    ROI(const Trueface::FaceBoxAndLandmarks& fb) {
+        x1 = fb.topLeft.x;
+        y1 = fb.topLeft.y;
+        x2 = fb.bottomRight.x;
+        y2 = fb.bottomRight.y;
+    }
+    // Top left
+    int x1 = 0;
+    int y1 = 0;
+    // Bottom right
+    int x2 = 0;
+    int y2 = 0;
+};
+
+bool getEyeduct(const cv::Mat& img, ROI& eyeduct, std::unique_ptr<Trueface::SDK>& m_tfSDK) {
+    auto errorCode = m_tfSDK->setImage(img.data, img.cols, img.rows, Trueface::ColorCode::bgr);
+    if (errorCode != Trueface::ErrorCode::NO_ERROR) {
+//        m_logger->warn("Unable to set the temperature image");
+        return false;
+    }
+
+    bool found;
+    Trueface::FaceBoxAndLandmarks faceBoxAndLandmarks;
+    m_tfSDK->detectLargestFace(faceBoxAndLandmarks, found);
+    if (!found) {
+//        std::cout << "No face found in temperature frame!" << std::endl;
+//        m_logger->debug("No face found in the temperature frame");
+        return false;
+    }
+
+//    std::cout << "Face detected!" << std::endl;
+
+    float yaw, pitch, roll;
+    errorCode = m_tfSDK->estimateHeadOrientation(faceBoxAndLandmarks, yaw, pitch, roll);
+    if (errorCode != Trueface::ErrorCode::NO_ERROR) {
+//        m_logger->warn("Unable to compute thermal image orientation");
+        return false;
+    }
+
+
+    if (yaw < -0.75 || yaw > 0.75) {
+//        m_logger->debug("Yaw angle too extreme");
+        return false;
+    }
+
+    const auto& leftEye = faceBoxAndLandmarks.landmarks[0];
+    const auto& rightEye = faceBoxAndLandmarks.landmarks[1];
+
+    // Use half the distance from the left eye to right eye to generate the box.
+    const size_t sideLength = (rightEye.x - leftEye.x) / 1.75; // Use 1.75 instead of 2 to ensure we capture the eye duct region
+
+    if (yaw > 0.f) {
+        eyeduct.x1 = leftEye.x;
+        eyeduct.x2 = leftEye.x + sideLength;
+        eyeduct.y1 = leftEye.y - sideLength / 2;
+        if (eyeduct.y1 < 0) {
+            eyeduct.y1 = 0;
+        }
+        eyeduct.y2 = leftEye.y + sideLength / 2;
+    } else {
+        eyeduct.x1 = rightEye.x - sideLength;
+        eyeduct.x2 = rightEye.x;
+        eyeduct.y1 = rightEye.y - sideLength / 2;
+        if (eyeduct.y1 < 0) {
+            eyeduct.y1 = 0;
+        }
+        eyeduct.y2 = rightEye.y + sideLength / 2;
+    }
+
+    return true;
+}
 
 struct Metadata {
     // Plancks constants
@@ -24,6 +99,19 @@ struct Metadata {
 };
 
 int main() {
+    // Initialize the SDK
+    Trueface::ConfigurationOptions options;
+    options.frModel = Trueface::FacialRecognitionModel::LITE;
+    options.smallestFaceHeight = 40;
+    auto m_tfSDK = std::make_unique<Trueface::SDK>(options);
+
+    auto valid = m_tfSDK->setLicense("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbW90aW9uIjp0cnVlLCJmciI6dHJ1ZSwiYnlwYXNzX2dwdV91dWlkIjp0cnVlLCJwYWNrYWdlX2lkIjpudWxsLCJleHBpcnlfZGF0ZSI6IjIwMjEtMDEtMDEiLCJncHVfdXVpZCI6W10sInRocmVhdF9kZXRlY3Rpb24iOnRydWUsIm1hY2hpbmVzIjoxLCJhbHByIjp0cnVlLCJuYW1lIjoiQ3lydXMgR1BVIiwidGtleSI6Im5ldyIsImV4cGlyeV90aW1lX3N0YW1wIjoxNjA5NDU5MjAwLjAsImF0dHJpYnV0ZXMiOnRydWUsInR5cGUiOiJvZmZsaW5lIiwiZW1haWwiOiJjeXJ1c0B0cnVlZmFjZS5haSJ9.2uQZTG_AXcHVXEFahbvkM8-gmosLPxjSSnbfEAz5gpY");
+    if (!valid) {
+        std::string errMsg = "Token is not valid or is expired!";
+//        m_logger->error(errMsg);
+        throw std::runtime_error(errMsg);
+    }
+
     const std::string IP = "192.168.0.5";
     const std::string endpoint = "http://" + IP + "/api/image/current?tempUnit=C&overlay=off";
     auto etPtr = std::make_unique<ExifTool>();
@@ -118,24 +206,34 @@ int main() {
             cv::log( meta.R1 / (meta.R2 * (thermalImg + meta.O)) + meta.F, loggedMat);
             cv::Mat celciusMat = meta.B / loggedMat - 273.15;
 
-            // Can go up to 479, 639
-//    std::cout << kelvinMat.at<float>(479, 639) - 273.15 << std::endl;
-//    std::cout << kelvinMat.at<float>(0, 0) - 273.15 << std::endl;
 
-            // Find the max temp in the frame
+            auto finish = std::chrono::high_resolution_clock::now();
+            std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(finish-start).count() << " ms" << std::endl;
+
+            ROI eyeduct;
+            cv::Mat img = cv::imread(outFilename);
+            bool didFindFace = getEyeduct(img, eyeduct, m_tfSDK);
+            if (!didFindFace) {
+                std::cout << "No face found" << std::endl;
+                continue;
+            }
+
+            cv::Rect roi (eyeduct.x1, eyeduct.y1, eyeduct.x2 - eyeduct.x1, eyeduct.y2 - eyeduct.y1);
+            cv::Mat tempCropped = celciusMat(roi);
+
             float maxTemp = 0;
-            for (int row = 0; row < celciusMat.rows; ++row) {
-                for (int col = 0; col < celciusMat.cols; ++col) {
-                    if (celciusMat.at<float>(row, col) > maxTemp) {
-                        maxTemp = celciusMat.at<float>(row, col);
+            for (int row = 0; row < tempCropped.rows; ++row) {
+                for (int col = 0; col < tempCropped.cols; ++col) {
+                    if (tempCropped.at<float>(row, col) > maxTemp) {
+                        maxTemp = tempCropped.at<float>(row, col);
                     }
                 }
             }
 
-            std::cout << "The max temp is: " << maxTemp << std::endl;
+            std::cout << "--------- Eyeduct Temp ------------" << std::endl;
+            std::cout << maxTemp << " c" << std::endl;
+            std::cout << "-----------------------------------" << std::endl;
 
-            auto finish = std::chrono::high_resolution_clock::now();
-            std::cout << std::chrono::duration_cast<std::chrono::milliseconds>(finish-start).count() << " ms" << std::endl;
 
             remove(outFilename.c_str());
         } catch( curlpp::RuntimeError &e ) {

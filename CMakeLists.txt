@@ -12,6 +12,9 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/cpp_exiftool/inc)
 include_directories("/home/cyrus/work/IRYX/prototype/frame_reader_a400/curlpp-0.8.1/include")
 link_directories("/home/cyrus/work/IRYX/prototype/frame_reader_a400/curlpp-0.8.1/build")
 
+include_directories(/home/cyrus/work/IRYX/IRYX_temp_reader/libs/truefaceSDK/trueface_sdk)
+link_directories(/home/cyrus/work/IRYX/IRYX_temp_reader/libs/truefaceSDK/trueface_sdk)
+
 find_package(OpenCV REQUIRED)
 find_package(CURL REQUIRED)
 
@@ -22,4 +25,4 @@ add_executable(exiftool
         ${CMAKE_CURRENT_LIST_DIR}/cpp_exiftool/src/TagInfo.cpp
         )
 
-target_link_libraries(exiftool ${OpenCV_LIBS} libcurlpp.a ${CURL_LIBRARIES})
+target_link_libraries(exiftool ${OpenCV_LIBS} libcurlpp.a ${CURL_LIBRARIES} tf)
